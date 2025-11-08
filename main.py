@@ -1,16 +1,14 @@
-import os
-import random
 import discord
-from discord import app_commands
 from discord.ext import commands
-
-TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE"
+import random
 
 intents = discord.Intents.default()
-intents.members = True
+intents.members = True  # Needed to fetch server members
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-NFL_PLAYERS = [
+
+nfl_players = [
     # --- 125+ player list ---
     "Patrick Mahomes", "Josh Allen", "Joe Burrow", "Lamar Jackson", "Justin Herbert",
     "Jalen Hurts", "Dak Prescott", "Aaron Rodgers", "Tua Tagovailoa", "Trevor Lawrence",
@@ -46,43 +44,83 @@ NFL_PLAYERS = [
     "Troy Polamalu", "Reggie White", "Ed Reed", "Joe Montana"
 ]
 
+# Store current game
+current_game = {
+    "imposter": None,
+    "athlete": None,
+    "insiders": []
+}
+
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
     try:
-        await bot.tree.sync()
-        print("Slash commands synced.")
+        synced = await bot.tree.sync()
+        print(f"Slash commands synced ({len(synced)})")
     except Exception as e:
         print(e)
 
-@bot.tree.command(name="startimposter", description="Start an imposter game with 2–10 players.")
-@app_commands.describe(players="Mention all players (2–10 total)")
+# Start a new imposter game
+@bot.tree.command(name="startimposter", description="Start an NFL Imposter game with 2–10 players.")
+@discord.app_commands.describe(players="Mention 2–10 Discord members to play")
 async def startimposter(interaction: discord.Interaction, players: str):
-    mentioned = [m for m in interaction.guild.members if f"<@{m.id}>" in players or f"<@!{m.id}>" in players]
+    # Split player input by spaces (plain names or mentions)
+    player_names = players.split()
+    
+    # Match Discord members by username or mention
+    mentioned = [m for m in interaction.guild.members if m.name in player_names or f"<@{m.id}>" in player_names or f"<@!{m.id}>" in player_names]
+    
     if len(mentioned) < 2 or len(mentioned) > 10:
         await interaction.response.send_message("❌ Include between 2–10 players.", ephemeral=True)
         return
-
+    
+    # Pick random NFL player
+    athlete = random.choice(nfl_players)
+    
+    # Pick imposter
     imposter = random.choice(mentioned)
-    insiders = [p for p in mentioned if p != imposter]
-    athlete = random.choice(NFL_PLAYERS)
-
-    failed = []
+    insiders = [m for m in mentioned if m != imposter]
+    
+    # DM players
     for insider in insiders:
         try:
-            await insider.send(f"🏈 You are an **Insider**. The athlete is **{athlete}**.")
-        except discord.Forbidden:
-            failed.append(insider.name)
-
+            await insider.send(f"You're an insider! The NFL player is: **{athlete}**")
+        except:
+            await interaction.channel.send(f"⚠️ Couldn't DM {insider.display_name}.")
+    
     try:
-        await imposter.send("🕵️ You are the **Imposter**. You do **NOT** know the athlete.")
-    except discord.Forbidden:
-        failed.append(imposter.name)
+        await imposter.send(f"You're the IMPOSTER! Try to blend in while everyone else knows the NFL player.")
+    except:
+        await interaction.channel.send(f"⚠️ Couldn't DM {imposter.display_name}.")
 
-    msg = f"✅ Roles assigned to {len(mentioned)} players! Check your DMs."
-    if failed:
-        msg += f"\n⚠️ Couldn't DM: {', '.join(failed)} (they may have DMs closed)."
+    # Save game state
+    current_game["imposter"] = imposter
+    current_game["athlete"] = athlete
+    current_game["insiders"] = insiders
 
-    await interaction.response.send_message(msg, ephemeral=True)
+    await interaction.response.send_message(f"🎮 Game started with {len(mentioned)} players! Check your DMs.", ephemeral=True)
 
+# Reveal the imposter and NFL player
+@bot.tree.command(name="reveal", description="Reveal the imposter and NFL player for the last game.")
+async def reveal(interaction: discord.Interaction):
+    if not current_game["imposter"] or not current_game["athlete"]:
+        await interaction.response.send_message("❌ No game in progress to reveal.", ephemeral=True)
+        return
+
+    imposter_name = current_game["imposter"].display_name
+    athlete_name = current_game["athlete"]
+
+    await interaction.response.send_message(
+        f"🏁 The round is over!\n"
+        f"🕵️ Imposter: **{imposter_name}**\n"
+        f"🏈 NFL Player: **{athlete_name}**"
+    )
+
+    # Reset game
+    current_game["imposter"] = None
+    current_game["athlete"] = None
+    current_game["insiders"] = []
+
+# Run the bot
+TOKEN = C:\Users\Reyce\Documents\Dependencies\token.txt
 bot.run(TOKEN)
